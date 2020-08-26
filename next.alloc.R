@@ -8,7 +8,8 @@
 # early.stop: stop early for futility
 # 1- lambda: posterior desicion bound at last patient
 # gam: posterior bound is a function of n^gam
-ERN1 <- function(n, p, 
+#nmin: number of minimum patients in each arm (scalar)
+ERN1 <- function(n, p, nmin,
                  early.stop, 
                  priora=NULL, priorb=NULL){
   if(min(n) < 0 ||  length(p) != length(n)
@@ -23,16 +24,17 @@ ERN1 <- function(n, p,
   mat <- expand.grid(combns)
   
   p_next <- rep(0, length(n))
-
+  
   #  don't count until each arm has this many pts 
   #  arms with too few patients
-  #islow <- (n < min_n) 
+  #nmin <- 5
+  islow <- (n < nmin) 
   #  are there arms with too few patients?
-  #if(sum(islow) > 0) { 
-    # randomize to those arms with too few pts
-   # p_next[islow] <- 1 / sum(islow) 
-    #return(p_next)
-  #}        
+  if(sum(islow) > 0) { 
+  # randomize to those arms with too few pts
+   p_next[islow] <- 1 / sum(islow) 
+   return(p_next)
+  }        
   for(i in 1:nrow(mat)){
     x <- unlist(mat[i,])
     r <- RBayeswin(n, x, priora, priorb)
@@ -62,9 +64,11 @@ ERN1 <- function(n, p,
 }
 
 #ERN1(n=c(2,3,4), p=c(.1, .2, .15),  
- #   priora=rep(1,3), priorb=rep(1,3))
+#   priora=rep(1,3), priorb=rep(1,3),
+#   early.stop=F)
 #ERN1(n = c(55, 70), p=c(.65, .6), 
-#    priora=rep(1,2), priorb=rep(1,2))
+#    priora=rep(1,2), priorb=rep(1,2),
+#    early.stop=FALSE)
 
 # # # # #
 #  build next level branch via n[] from EN to ENR1
@@ -83,12 +87,12 @@ branch <- function(EN, er, n, EN1) {
 }
 
 #  allocation EN tree for first patient
-firstEN <- function(p, early.stop, 
+firstEN <- function(p, early.stop, nmin,
                     priora=NULL, priorb=NULL) {
   #  number of treatment arms
   k <- length(p) 
   #  plan for 1st patient
-  e <- ERN1(rep(0, k), p, 
+  e <- ERN1(rep(0, k), p, nmin,
             early.stop, 
             priora, priorb)          
   #  build design matrix for one patient
@@ -107,7 +111,7 @@ firstEN <- function(p, early.stop,
 #.....
 ######################################################################
 #   Allocation tree for the next patient
-nextEN <- function(EN, p, 
+nextEN <- function(EN, p, nmin,
                    early.stop, 
                    priora=NULL, priorb=NULL) {
   #  number of treatment arms
@@ -120,7 +124,7 @@ nextEN <- function(EN, p,
   repeat {                        #  loop on every n[] in EN
     n <- cme(n, N, k)             #  generate the next n[]
     if(max(n) == 0)break          #  are we done for this N of patients?
-    er <- ERN1(n, p, 
+    er <- ERN1(n, p, nmin,
                early.stop, 
                priora, priorb)           #  allocation prob of next patient at n[]
     EN1 <- branch(EN, er, n, EN1) #  build next level of branches
