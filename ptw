@@ -1,0 +1,110 @@
+
+# Nmax: maximum sample size (scalar)
+# p: true probability of response in each arm (vector)
+# nmin: minimum sample size in each arm (vector), 
+#       AR starts after nmin
+# theta_f: posterior prob threshold for futility stop
+# tau: tuning parameter for AR
+#      tau=1: AR without adjustment
+#      tau=0: Equal randomization
+# gam: posterior prob threshold for declaring winner
+
+ptw <- function(Nmax, p, nmin, 
+                  theta_f, tau,
+         early.stop=FALSE, 
+         priora=NULL, priorb=NULL,
+         gam=0.5) {
+  
+  # number of arms (scalar)
+  k <- length(p)
+
+  # matrix containing all the possible allocations 
+  # for the next patient
+  plus1 <- diag(nrow=k, ncol=k)
+  
+  p_alloc <- NULL
+  
+  for(N in 1 : Nmax){
+    # old: matrix including all possible allocations
+    # of the N patients, with choose(N + k - 1, k - 1) 
+    # rows and k columns
+    
+    if(N==1){
+      tmp <- list()
+      for(j in 1:k){
+        tmp[[j]] <- 0:N
+      }
+      old <- expand.grid(tmp)
+      old <- old[rowSums(old)==N,]
+      old <- as.matrix(old)
+      rownames(old) <- NULL
+      colnames(old) <- LETTERS[1:k]
+      
+      # old_prob: probs for each allocation of N patients
+      # to k arms, with length choose(N + k - 1, k - 1) 
+      # equal randomization for the 1st pt
+      old_prob <- rep(1/k, k)
+      # expected sample size in each arm  
+      EN <- c(N,rep(1/k,k))
+    }
+    
+    if(N>1){
+      # create all the possible allocations of N+1 pts
+      # based on allocations of N pts
+      new <- foreach(i=1:nrow(old),.combine="rbind")%do%{
+        cbind(rep.row(old[i,], k)+plus1, plus1, i)
+      }
+      # idx: trace origins of the new matrix to old
+      idx <- new[,-seq(1,2*k,1)]
+      
+      # new_prob:probs for each allocation of N patients
+      # to k arms, with length choose(N + k - 1, k - 1) 
+      new_prob <- rowSums(next1_prob[idx,]*
+      new[, (k+1):(2*k)])*old_prob[idx]
+      
+      umat <- uniquecombs(new[,1:k])
+      ind <- attr(umat, "index")
+    
+      old_prob <- aggregate(new_prob, by=list(ind), sum)$x
+      old <- unique(new[,1:k])
+    
+      EN <- rbind(EN,
+                c(N,colSums(old*old_prob)))
+    } 
+    
+    # next1_prob: allocation probs for the next pt
+    # given sample size n in each arm
+    #  matrix with choose(N+k-1, k-1) 
+    # rows and k columns
+    next1_prob <- t(apply(old, 1, function(n){
+      ERN1(n, p, nmin, early.stop,
+           tau, theta_f, priora, priorb)
+    }))
+    
+    p_alloc <- rbind(p_alloc,
+                     colSums(next1_prob*old_prob))
+  }
+  
+  # m_pwr: marginal power, by averaging out all possible
+  # allocations of N pts to k arms
+  pwr_vec <- t(apply(old, 1, function(n){
+    pwr_n <- power.fun(n, p, gam,
+                       priora, priorb)
+  }))
+  m_pwr <- colSums(pwr_vec*old_prob)
+  
+  designs <- cbind(old,old_prob)
+  rownames(designs) <- NULL
+  colnames(designs) <- c(LETTERS[1:k],"Prob")
+  
+  return(list("EN"=EN, "power"=m_pwr,
+              "p_alloc"=p_alloc,
+              "design"=cbind(old,old_prob)))
+}
+
+#out1 <- ptw(Nmax=20, p=c(0.1,0.3), nmin=1,
+#           theta_f=0.2, tau=1,
+#           early.stop = FALSE,
+ #          priora=rep(1,2),
+ #          priorb=rep(1,2), 
+ #          gam=0.5) 
